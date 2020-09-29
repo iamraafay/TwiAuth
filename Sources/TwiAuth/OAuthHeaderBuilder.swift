@@ -12,92 +12,19 @@ enum TwiHTTPMethod: String, Equatable {
     case get = "GET", post = "POST"
 }
 
-protocol DictionaryRepresentable: Encodable {
-    var dictionary: [String: Any] { get }
-}
-
-extension DictionaryRepresentable {
-    var dictionary: [String: Any] {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-
-        return (try? JSONSerialization.jsonObject(with: encoder.encode(self))) as? [String: Any] ?? [:]
-    }
-}
-
-protocol OAuthAuthorizationHeader: DictionaryRepresentable {
-    var oauthConsumerKey: String { get }
-    var oauthNonce: String { get }
-    var oauthSignatureMethod: String { get }
-    var oauthTimestamp: String { get }
-    var oauthVersion: String { get }
-}
-
-extension OAuthAuthorizationHeader {
-    var oauthNonce: String {
-        UUID().uuidString
-    }
-
-    var oauthSignatureMethod: String {
-        "HMAC-SHA1"
-    }
-
-    var oauthTimestamp: String {
-        String(Int(NSDate().timeIntervalSince1970))
-    }
-
-    var oauthVersion: String {
-        "1.0"
-    }
-}
-
-protocol SignedHeader: DictionaryRepresentable {
-    var oauthSignature: String { get }
-}
-
-struct RequestTokenHeader: OAuthAuthorizationHeader {
-    let oauthCallback: String
-    let oauthConsumerKey: String
-    let oauthNonce: String = UUID().uuidString
-    let oauthSignatureMethod: String = "HMAC-SHA1"
-    let oauthTimestamp: String = String(Int(NSDate().timeIntervalSince1970))
-    let oauthVersion: String = "1.0"
-}
-
-struct SignedRequestTokenHeader: SignedHeader, OAuthAuthorizationHeader {
-    let oauthSignature: String
-    let oauthCallback: String
-    let oauthConsumerKey: String
-    let oauthNonce: String
-    let oauthSignatureMethod: String
-    let oauthTimestamp: String
-    let oauthVersion: String
-}
-
-extension SignedRequestTokenHeader {
-    init(requestToken header: RequestTokenHeader, oauthSignature: String) {
-        self.oauthSignature = oauthSignature
-        oauthCallback = header.oauthCallback
-        oauthConsumerKey = header.oauthConsumerKey
-        oauthNonce = header.oauthNonce
-        oauthSignatureMethod = header.oauthSignatureMethod
-        oauthTimestamp = header.oauthTimestamp
-        oauthVersion = header.oauthVersion
-    }
-}
-
-struct AccessTokenHeader: OAuthAuthorizationHeader {
-    let oauthSignature: String
-    let oauthConsumerKey: String
-    let oauthToken: String
-    let oauthVerifier: String
-}
-
 struct OAuthHeaderBuilder {
     func requestTokenHeader(with consumerKey: String, _ consumerSecret: String, and callback: String) -> String {
         let header = RequestTokenHeader(oauthCallback: callback, oauthConsumerKey: consumerKey)
         let signature = composeSignature(url: TwitterURL.requestToken.url.absoluteString, params: header.dictionary, consumerSecret: consumerSecret)
         let signedHeader = SignedRequestTokenHeader(requestToken: header, oauthSignature: signature)
+
+        return authorizationHeader(params: signedHeader.dictionary)
+    }
+
+    func accessTokenHeader(with consumerKey: String, oauthToken: String, oauthVerifier: String, _ consumerSecret: String, and callback: String) -> String {
+        let header = AccessTokenHeader(oauthConsumerKey: consumerKey, oauthToken: oauthToken, oauthVerifier: oauthVerifier)
+        let signature = composeSignature(url: TwitterURL.accessToken.url.absoluteString, params: header.dictionary, consumerSecret: consumerSecret)
+        let signedHeader = SignedAccessTokenHeader(requestToken: header, oauthSignature: signature)
 
         return authorizationHeader(params: signedHeader.dictionary)
     }
