@@ -1,5 +1,13 @@
 
 import AuthenticationServices
+import Combine
+
+public struct AccessToken {
+    let oauthToken: String
+    let oauthSecret: String
+    let userId: String
+    let screenName: String
+}
 
 public struct Config {
     let consumerKey: String
@@ -24,13 +32,6 @@ public class TwiAuth {
         let oauthVerifier: String
     }
 
-    struct AccessToken {
-        let oauthToken: String
-        let oauthSecret: String
-        let userId: String
-        let screenName: String
-    }
-
     enum State {
         case requestedToken(_ token: RequestToken), authenticate(_ token: AuthenticateToken), accessToken(_ token: AccessToken), idle
     }
@@ -40,6 +41,9 @@ public class TwiAuth {
     private let sequence: OAuthTokenSequence
     private var state: State
 
+    private var authenticatingPipeline: Cancellable?
+
+    public var prefersEphemeralWebBrowserSession: Bool
     public weak var presentationContextProviding: ASWebAuthenticationPresentationContextProviding? {
         didSet {
             sequence.presentationContextProviding = presentationContextProviding
@@ -51,41 +55,85 @@ public class TwiAuth {
     public init(session: URLSession = .shared, config: Config) {
         self.session = session
         self.config = config
+        prefersEphemeralWebBrowserSession = false
         sequence = OAuthTokenSequence()
         state = .idle
     }
 
-    public func initialize(completion: @escaping (Result<String, Error>) -> Void) {
+    public func initialize(completion: @escaping (Result<AccessToken, TwiError>) -> Void) {
         guard presentationContextProviding != nil else {
             fatalError("Please set `presentationContextProviding` in order for `AuthenticationService` to present Safari on a provided window.")
         }
 
-        /// WIP
-        requestToken { [weak self] result in
-            guard let self = self else { return }
-            switch result {
-            case .success:
-                self.authenticate { [weak self] result in
-                    guard let self = self else { return }
-                    switch result {
-                    case .success:
-                        self.accessToken { result in
-                            switch result {
-                            case .success(let state):
-                                guard case State.accessToken(let token) = state else { break }
-                                print("token: \(token)")
-                            case .failure(let error):
-                                print("error - accessToke: \(error)")
-                            }
-                        }
-                    case .failure(let error):
-                        print("error: \(error)")
-                    }
+        let publisher = initializePublisher()
+
+        authenticatingPipeline = publisher.sink(receiveCompletion: { sinkCompletion in
+            switch sinkCompletion {
+            case .failure(let failure):
+                completion(.failure(failure))
+            case .finished:
+                debugPrint("-- TwiAuth ended auth sequence -- ")
+            }
+        }, receiveValue: { state in
+            guard case let State.accessToken(accessToken) = state else {
+                completion(.failure(.accessToken))
+                return
+            }
+            completion(.success(accessToken))
+        })
+    }
+
+    func initializePublisher() -> AnyPublisher<State, TwiError> {
+        requestTokenPublisher()
+            .flatMap { [self] _ in
+                self.authenticatePublisher()
+            }
+            .flatMap { _ in
+                self.accessTokenPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+
+    private func requestTokenPublisher() -> AnyPublisher<State, TwiError> {
+        Future { [weak self] promise in
+            self?.requestToken { result in
+                switch result {
+                case .success(let state):
+                    promise(.success(state))
+                case .failure(let error):
+                    promise(.failure(error))
                 }
-            case .failure(let error):
-                print(error)
             }
         }
+        .eraseToAnyPublisher()
+    }
+
+    private func authenticatePublisher() -> AnyPublisher<State, TwiError> {
+        Future { [weak self] promise in
+            self?.authenticate { result in
+                switch result {
+                case .success(let state):
+                    promise(.success(state))
+                case .failure(let error):
+                    promise(.failure(error))
+                }
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+
+    private func accessTokenPublisher() -> AnyPublisher<State, TwiError> {
+        Future { [weak self] promise in
+            self?.accessToken { result in
+                switch result {
+                case .success(let state):
+                    promise(.success(state))
+                case .failure(let error):
+                    promise(.failure(error))
+                }
+            }
+        }
+        .eraseToAnyPublisher()
     }
 
     private func requestToken(completion: @escaping (Result<State, TwiError>) -> Void) {
@@ -132,7 +180,7 @@ public class TwiAuth {
             completion(.success(self.state))
         }
 
-        asSession.prefersEphemeralWebBrowserSession = true
+        asSession.prefersEphemeralWebBrowserSession = prefersEphemeralWebBrowserSession
         asSession.presentationContextProvider = presentationContextProviding
 
         DispatchQueue.main.async {
@@ -192,7 +240,7 @@ extension TwiAuth.AuthenticateToken {
     }
 }
 
-extension TwiAuth.AccessToken {
+extension AccessToken {
     init(with attributes: [String: String]) {
         oauthToken = attributes["oauth_token"] ?? ""
         oauthSecret = attributes["oauth_token_secret"] ?? ""
@@ -204,6 +252,7 @@ extension TwiAuth.AccessToken {
 public enum TwiError: Error {
     case badAuthData(String)
     case initialization(Error?), authenticating(Error)
+    case accessToken
 
     static func encodingError() -> NSError {
         NSError(domain: "com.twiauth.error", code: 601, userInfo: ["reason": "Failed to encode the response received."])
