@@ -61,6 +61,10 @@ public class TwiAuth {
     }
 
     public func initialize(completion: @escaping (Result<AccessToken, TwiError>) -> Void) {
+        if case let .accessToken(token) = state {
+            completion(.success(token))
+            return
+        }
         guard presentationContextProviding != nil else {
             fatalError("Please set `presentationContextProviding` in order for `AuthenticationService` to present Safari on a provided window.")
         }
@@ -193,7 +197,7 @@ public class TwiAuth {
             return
         }
         let headerBuilder = OAuthHeaderBuilder()
-        let authHeader = headerBuilder.accessTokenHeader(
+        let authHeader = headerBuilder.accessTokenVerifierHeader(
             with: config.consumerKey,
             oauthToken: token.oauthToken,
             oauthVerifier: token.oauthVerifier,
@@ -256,5 +260,29 @@ public enum TwiError: Error {
 
     static func encodingError() -> NSError {
         NSError(domain: "com.twiauth.error", code: 601, userInfo: ["reason": "Failed to encode the response received."])
+    }
+}
+
+extension TwiAuth {
+    func accessTokenAuthHeader(url: String, method: TwiHTTPMethod) -> String {
+        guard case let .accessToken(token) = state else {
+            return ""
+        }
+
+        let authHeader = OAuthHeaderBuilder().accessTokenHeader(url: url, method: .get, consumerKey: config.consumerKey, consumerSecret: config.consumerSecret, oauthToken: token.oauthToken, oauthSecret: token.oauthSecret)
+
+        return authHeader
+    }
+}
+
+public extension URLRequest {
+    mutating func authorize(with twiAuth: TwiAuth) {
+        guard
+            let urlString = url?.absoluteString,
+            let httpMethod = httpMethod,
+            let method = TwiHTTPMethod(rawValue: httpMethod) else {
+            return
+        }
+        addValue(twiAuth.accessTokenAuthHeader(url: urlString, method: method), forHTTPHeaderField: "Authorization")
     }
 }

@@ -21,9 +21,17 @@ struct OAuthHeaderBuilder {
         return authorizationHeader(params: signedHeader.dictionary)
     }
 
-    func accessTokenHeader(with consumerKey: String, oauthToken: String, oauthVerifier: String, _ consumerSecret: String, and callback: String) -> String {
-        let header = AccessTokenHeader(oauthConsumerKey: consumerKey, oauthToken: oauthToken, oauthVerifier: oauthVerifier)
+    func accessTokenVerifierHeader(with consumerKey: String, oauthToken: String, oauthVerifier: String, _ consumerSecret: String, and callback: String) -> String {
+        let header = AccessTokenVerifierHeader(oauthConsumerKey: consumerKey, oauthToken: oauthToken, oauthVerifier: oauthVerifier)
         let signature = composeSignature(url: TwitterURL.accessToken.url.absoluteString, params: header.dictionary, consumerSecret: consumerSecret)
+        let signedHeader = SignedAccessTokenVerifierHeader(requestToken: header, oauthSignature: signature)
+
+        return authorizationHeader(params: signedHeader.dictionary)
+    }
+
+    func accessTokenHeader(url: String, method: TwiHTTPMethod, consumerKey: String, consumerSecret: String, oauthToken: String, oauthSecret: String) -> String {
+        let header = AccessTokenHeader(oauthConsumerKey: consumerKey, oauthToken: oauthToken)
+        let signature = composeSignature(httpMethod: method, url: url, params: header.dictionary, consumerSecret: consumerSecret, oAuthTokenSecret: oauthSecret)
         let signedHeader = SignedAccessTokenHeader(requestToken: header, oauthSignature: signature)
 
         return authorizationHeader(params: signedHeader.dictionary)

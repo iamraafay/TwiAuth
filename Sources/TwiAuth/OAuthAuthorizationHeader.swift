@@ -50,7 +50,7 @@ extension SignedRequestTokenHeader {
     }
 }
 
-struct AccessTokenHeader: OAuthAuthorizationHeader {
+struct AccessTokenVerifierHeader: OAuthAuthorizationHeader {
     let oauthConsumerKey: String
     let oauthToken: String
     let oauthVerifier: String
@@ -60,7 +60,7 @@ struct AccessTokenHeader: OAuthAuthorizationHeader {
     let oauthVersion: String = "1.0"
 }
 
-struct SignedAccessTokenHeader: SignedHeader, OAuthAuthorizationHeader {
+struct SignedAccessTokenVerifierHeader: SignedHeader, OAuthAuthorizationHeader {
     let oauthSignature: String
     let oauthConsumerKey: String
     let oauthToken: String
@@ -71,11 +71,53 @@ struct SignedAccessTokenHeader: SignedHeader, OAuthAuthorizationHeader {
     let oauthVersion: String
 }
 
+extension SignedAccessTokenVerifierHeader {
+    init(requestToken header: AccessTokenVerifierHeader, oauthSignature: String) {
+        self.oauthSignature = oauthSignature
+        oauthToken = header.oauthToken
+        oauthVerifier = header.oauthVerifier
+        oauthConsumerKey = header.oauthConsumerKey
+        oauthNonce = header.oauthNonce
+        oauthSignatureMethod = header.oauthSignatureMethod
+        oauthTimestamp = header.oauthTimestamp
+        oauthVersion = header.oauthVersion
+    }
+}
+
+
+/** POST
+ --header 'authorization: OAuth
+ oauth_consumer_key="oauth_customer_key",
+ oauth_nonce="generated_oauth_nonce",
+ oauth_signature="generated_oauth_signature",
+ oauth_signature_method="HMAC-SHA1",
+ oauth_timestamp="generated_timestamp",
+ oauth_token="oauth_token",
+ oauth_version="1.0"'
+ */
+struct AccessTokenHeader: OAuthAuthorizationHeader {
+    let oauthConsumerKey: String
+    let oauthNonce: String = UUID().uuidString
+    let oauthSignatureMethod: String = "HMAC-SHA1"
+    let oauthTimestamp: String = String(Int(NSDate().timeIntervalSince1970))
+    let oauthToken: String
+    let oauthVersion: String = "1.0"
+}
+
+struct SignedAccessTokenHeader: SignedHeader, OAuthAuthorizationHeader {
+    let oauthSignature: String
+    let oauthConsumerKey: String
+    let oauthToken: String
+    let oauthNonce: String
+    let oauthSignatureMethod: String
+    let oauthTimestamp: String
+    let oauthVersion: String
+}
+
 extension SignedAccessTokenHeader {
     init(requestToken header: AccessTokenHeader, oauthSignature: String) {
         self.oauthSignature = oauthSignature
         oauthToken = header.oauthToken
-        oauthVerifier = header.oauthVerifier
         oauthConsumerKey = header.oauthConsumerKey
         oauthNonce = header.oauthNonce
         oauthSignatureMethod = header.oauthSignatureMethod
