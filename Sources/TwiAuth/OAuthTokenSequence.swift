@@ -39,7 +39,7 @@ enum TwitterURL {
 
             return buildingComponents.url!
         case .authenticate(requestToken: let requestToken):
-            buildingComponents.path = "/oauth/authenticate"
+            buildingComponents.path = "/oauth/authorize"
             buildingComponents.queryItems = [URLQueryItem(name: "oauth_token", value: requestToken)]
 
             return buildingComponents.url!
