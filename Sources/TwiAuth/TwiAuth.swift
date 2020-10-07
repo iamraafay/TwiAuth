@@ -2,11 +2,23 @@
 import AuthenticationServices
 import Combine
 
-public struct AccessToken {
-    let oauthToken: String
-    let oauthSecret: String
-    let userId: String
-    let screenName: String
+public protocol TwiAuthTokenProviding {
+    func read() -> AccessToken?
+    func write(token: AccessToken)
+}
+
+public struct AccessToken: Codable {
+    public let oauthToken: String
+    public let oauthSecret: String
+    public let userId: String
+    public let screenName: String
+    
+    public init(oauthToken: String, oauthSecret: String, userId: String, screenName: String) {
+        self.oauthToken = oauthToken
+        self.oauthSecret = oauthSecret
+        self.userId = userId
+        self.screenName = screenName
+    }
 }
 
 public struct Config {
@@ -49,6 +61,12 @@ public class TwiAuth {
             sequence.presentationContextProviding = presentationContextProviding
         }
     }
+    public var tokenProviding: TwiAuthTokenProviding? {
+        didSet {
+            guard let token = tokenProviding?.read() else { return }
+            state = .accessToken(token)
+        }
+    }
 
     private(set) var token: String?
 
@@ -60,9 +78,9 @@ public class TwiAuth {
         state = .idle
     }
 
-    public func initialize(completion: @escaping (Result<AccessToken, TwiError>) -> Void) {
-        if case let .accessToken(token) = state {
-            completion(.success(token))
+    public func initialize(completion: @escaping (Result<Bool, TwiError>) -> Void) {
+        if case .accessToken = state {
+            completion(.success(true))
             return
         }
         guard presentationContextProviding != nil else {
@@ -78,12 +96,13 @@ public class TwiAuth {
             case .finished:
                 debugPrint("-- TwiAuth ended auth sequence -- ")
             }
-        }, receiveValue: { state in
-            guard case let State.accessToken(accessToken) = state else {
+        }, receiveValue: { [self] state in
+            guard case let .accessToken(token) = state else {
                 completion(.failure(.accessToken))
                 return
             }
-            completion(.success(accessToken))
+            tokenProviding?.write(token: token)
+            completion(.success(true))
         })
     }
 
