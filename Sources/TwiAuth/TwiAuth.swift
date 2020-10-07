@@ -118,47 +118,88 @@ public class TwiAuth {
     }
 
     private func requestTokenPublisher() -> AnyPublisher<State, TwiError> {
-        Future { [weak self] promise in
-            self?.requestToken { result in
-                switch result {
-                case .success(let state):
-                    promise(.success(state))
-                case .failure(let error):
-                    promise(.failure(error))
-                }
+        let headerBuilder = OAuthHeaderBuilder()
+        let authHeader = headerBuilder.requestTokenHeader(with: config.consumerKey, config.consumerSecret, and: config.callbackScheme)
+        var request = URLRequest(url: TwitterURL.requestToken.url, timeoutInterval: Double.infinity)
+        request.httpMethod = TwiHTTPMethod.post.rawValue
+        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+        return session.dataTaskPublisher(for: request)
+            .tryMap { [self] result -> State in
+                guard let dataString = String(data: result.data, encoding: .utf8) else { throw TwiError.encodingError() }
+                guard let response = result.response as? HTTPURLResponse, response.statusCode == 200 else { throw TwiError.badAuthData(dataString) }
+
+                let attributes = dataString.urlQueryStringParameters
+                state = .requestedToken(RequestToken(with: attributes))
+                return state
             }
-        }
-        .eraseToAnyPublisher()
+            .mapError { error -> TwiError in
+                .initialization(error)
+            }
+            .eraseToAnyPublisher()
     }
 
     private func authenticatePublisher() -> AnyPublisher<State, TwiError> {
-        Future { [weak self] promise in
-            self?.authenticate { result in
-                switch result {
-                case .success(let state):
-                    promise(.success(state))
-                case .failure(let error):
-                    promise(.failure(error))
+        guard case State.requestedToken(let token) = state else {
+            return Fail(error: TwiError.authenticating(nil))
+                .eraseToAnyPublisher()
+        }
+
+        return Future { [self] promise in
+            let webAuthSession = ASWebAuthenticationSession(url: TwitterURL.authenticate(token.oauthToken).url, callbackURLScheme: config.callbackScheme) { responseURL, error in
+                guard error == nil else {
+                    promise(.failure(.authenticating(error!)))
+                    return
                 }
+                guard let parameters = responseURL?.query?.urlQueryStringParameters else {
+                    promise(.failure(.authenticating(TwiError.encodingError())))
+                    return
+                }
+                let token = AuthenticateToken(with: parameters)
+                state = .authenticate(token)
+                promise(.success(state))
+            }
+            webAuthSession.prefersEphemeralWebBrowserSession = prefersEphemeralWebBrowserSession
+            webAuthSession.presentationContextProvider = presentationContextProviding
+
+            DispatchQueue.main.async {
+                webAuthSession.start()
             }
         }
         .eraseToAnyPublisher()
     }
 
     private func accessTokenPublisher() -> AnyPublisher<State, TwiError> {
-        Future { [weak self] promise in
-            self?.accessToken { result in
-                switch result {
-                case .success(let state):
-                    promise(.success(state))
-                case .failure(let error):
-                    promise(.failure(error))
-                }
-            }
+        guard case .authenticate(let token) = state else {
+            return Fail(error: TwiError.accessToken)
+                .eraseToAnyPublisher()
         }
-        .eraseToAnyPublisher()
+        let headerBuilder = OAuthHeaderBuilder()
+        let authHeader = headerBuilder.accessTokenVerifierHeader(
+            with: config.consumerKey,
+            oauthToken: token.oauthToken,
+            oauthVerifier: token.oauthVerifier,
+            config.consumerSecret, and: config.callbackScheme)
+        var request = URLRequest(url: TwitterURL.accessToken.url, timeoutInterval: Double.infinity)
+        request.httpMethod = TwiHTTPMethod.post.rawValue
+        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+        
+        return session.dataTaskPublisher(for: request)
+            .tryMap { [self] result -> State in
+                guard let dataString = String(data: result.data, encoding: .utf8) else { throw TwiError.encodingError() }
+                guard let response = result.response as? HTTPURLResponse, response.statusCode == 200 else { throw TwiError.badAuthData(dataString) }
+
+                let attributes = dataString.urlQueryStringParameters
+                state = .accessToken(AccessToken(with: attributes))
+
+                return state
+            }
+            .mapError { _ -> TwiError in
+                .accessToken
+            }
+            .eraseToAnyPublisher()
     }
 
+    @available(*, deprecated, renamed: "requestTokenPublisher")
     private func requestToken(completion: @escaping (Result<State, TwiError>) -> Void) {
         let headerBuilder = OAuthHeaderBuilder()
         let authHeader = headerBuilder.requestTokenHeader(with: config.consumerKey, config.consumerSecret, and: config.callbackScheme)
@@ -187,6 +228,7 @@ public class TwiAuth {
         }.resume()
     }
 
+    @available(*, deprecated, renamed: "authenticatePublisher")
     private func authenticate(completion: @escaping (Result<State, TwiError>) -> Void) {
         guard case State.requestedToken(let token) = state else { return }
         let asSession = ASWebAuthenticationSession(url: TwitterURL.authenticate(token.oauthToken).url, callbackURLScheme: config.callbackScheme) { responseURL, error in
@@ -211,6 +253,7 @@ public class TwiAuth {
         }
     }
 
+    @available(*, deprecated, renamed: "accessTokenPublisher")
     private func accessToken(completion: @escaping (Result<State, TwiError>) -> Void) {
         guard case .authenticate(let token) = state else {
             return
@@ -274,7 +317,7 @@ extension AccessToken {
 
 public enum TwiError: Error {
     case badAuthData(String)
-    case initialization(Error?), authenticating(Error)
+    case initialization(Error?), authenticating(Error?)
     case accessToken
 
     static func encodingError() -> NSError {
