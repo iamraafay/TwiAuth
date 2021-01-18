@@ -45,22 +45,20 @@ public class TwiAuth {
     }
 
     enum State {
-        case requestedToken(_ token: RequestToken), authenticate(_ token: AuthenticateToken), accessToken(_ token: AccessToken), idle
+        case requestedToken(_ token: RequestToken)
+        case authenticate(_ token: AuthenticateToken)
+        case accessToken(_ token: AccessToken)
+        case idle
     }
 
     private let session: URLSession
     private let config: Config
-    private let sequence: OAuthTokenSequence
     private var state: State
 
     private var authenticatingPipeline: Cancellable?
 
     public var prefersEphemeralWebBrowserSession: Bool
-    public weak var presentationContextProviding: ASWebAuthenticationPresentationContextProviding? {
-        didSet {
-            sequence.presentationContextProviding = presentationContextProviding
-        }
-    }
+    public weak var presentationContextProviding: ASWebAuthenticationPresentationContextProviding?
     public var tokenProviding: TwiAuthTokenProviding? {
         didSet {
             guard let token = tokenProviding?.read() else { return }
@@ -74,7 +72,10 @@ public class TwiAuth {
         self.session = session
         self.config = config
         prefersEphemeralWebBrowserSession = false
-        sequence = OAuthTokenSequence()
+        state = .idle
+    }
+
+    public func resetState() {
         state = .idle
     }
 
@@ -325,15 +326,25 @@ public enum TwiError: Error {
     }
 }
 
-extension TwiAuth {
-    func accessTokenAuthHeader(url: String, method: TwiHTTPMethod) -> String {
+public extension TwiAuth {
+    func accessTokenAuthHeader(url: String, method: String) -> String {
         guard case let .accessToken(token) = state else {
             return ""
         }
 
-        let authHeader = OAuthHeaderBuilder().accessTokenHeader(url: url, method: .get, consumerKey: config.consumerKey, consumerSecret: config.consumerSecret, oauthToken: token.oauthToken, oauthSecret: token.oauthSecret)
+        guard let method = method.twiHTTPMethod else {
+            return ""
+        }
+
+        let authHeader = OAuthHeaderBuilder().accessTokenHeader(url: url, method: method, consumerKey: config.consumerKey, consumerSecret: config.consumerSecret, oauthToken: token.oauthToken, oauthSecret: token.oauthSecret)
 
         return authHeader
+    }
+}
+
+extension String {
+    var twiHTTPMethod: TwiHTTPMethod? {
+        return TwiHTTPMethod(rawValue: self)
     }
 }
 
@@ -341,10 +352,9 @@ public extension URLRequest {
     mutating func authorize(with twiAuth: TwiAuth) {
         guard
             let urlString = url?.absoluteString,
-            let httpMethod = httpMethod,
-            let method = TwiHTTPMethod(rawValue: httpMethod) else {
+            let httpMethod = httpMethod else {
             return
         }
-        addValue(twiAuth.accessTokenAuthHeader(url: urlString, method: method), forHTTPHeaderField: "Authorization")
+        addValue(twiAuth.accessTokenAuthHeader(url: urlString, method: httpMethod), forHTTPHeaderField: "Authorization")
     }
 }
