@@ -1,4 +1,10 @@
+//
+//  TwiAuth.swift
+//  TwiAuth
+//
+//  Copyright (c) 2020 Mohammad Abdurraafay
 
+import Foundation
 import AuthenticationServices
 import Combine
 
@@ -7,56 +13,7 @@ public protocol TwiAuthTokenProviding {
     func write(token: AccessToken)
 }
 
-public struct AccessToken: Codable {
-    public let oauthToken: String
-    public let oauthSecret: String
-    public let userId: String
-    public let screenName: String
-    
-    public init(oauthToken: String, oauthSecret: String, userId: String, screenName: String) {
-        self.oauthToken = oauthToken
-        self.oauthSecret = oauthSecret
-        self.userId = userId
-        self.screenName = screenName
-    }
-}
-
-public struct Config {
-    let consumerKey: String
-    let consumerSecret: String
-    let callbackScheme: String
-
-    public init(consumerKey: String, consumerSecret: String, callbackScheme: String) {
-        self.consumerKey = consumerKey
-        self.consumerSecret = consumerSecret
-        self.callbackScheme = callbackScheme + "://twiAuth"
-    }
-}
-
 public class TwiAuth {
-    struct RequestToken {
-        let oauthToken: String
-        let oauthSecret: String
-    }
-
-    struct AuthenticateToken {
-        let oauthToken: String
-        let oauthVerifier: String
-    }
-
-    enum State {
-        case requestedToken(_ token: RequestToken)
-        case authenticate(_ token: AuthenticateToken)
-        case accessToken(_ token: AccessToken)
-        case idle
-    }
-
-    private let session: URLSession
-    private let config: Config
-    private var state: State
-
-    private var authenticatingPipeline: Cancellable?
-
     public var prefersEphemeralWebBrowserSession: Bool
     public weak var presentationContextProviding: ASWebAuthenticationPresentationContextProviding?
     public var tokenProviding: TwiAuthTokenProviding? {
@@ -66,11 +23,19 @@ public class TwiAuth {
         }
     }
 
+    private let session: URLSession
+    private let config: CredentialsConfig
+    private let headerBuilder: OAuthHeaderBuilder
+
+    private var state: State
+    private var authenticatingPipeline: Cancellable?
+
     private(set) var token: String?
 
-    public init(session: URLSession = .shared, config: Config) {
+    public init(session: URLSession = .shared, config: CredentialsConfig) {
         self.session = session
         self.config = config
+        headerBuilder = OAuthHeaderBuilder(config: config)
         prefersEphemeralWebBrowserSession = false
         state = .idle
     }
@@ -119,9 +84,8 @@ public class TwiAuth {
     }
 
     private func requestTokenPublisher() -> AnyPublisher<State, TwiError> {
-        let headerBuilder = OAuthHeaderBuilder()
-        let authHeader = headerBuilder.requestTokenHeader(with: config.consumerKey, config.consumerSecret, and: config.callbackScheme)
-        var request = URLRequest(url: TwitterURL.requestToken.url, timeoutInterval: Double.infinity)
+        let authHeader = headerBuilder.requestTokenHeader()
+        var request = URLRequest(url: Endpoint.requestToken.url, timeoutInterval: Double.infinity)
         request.httpMethod = TwiHTTPMethod.post.rawValue
         request.setValue(authHeader, forHTTPHeaderField: "Authorization")
         return session.dataTaskPublisher(for: request)
@@ -146,7 +110,7 @@ public class TwiAuth {
         }
 
         return Future { [self] promise in
-            let webAuthSession = ASWebAuthenticationSession(url: TwitterURL.authenticate(token.oauthToken).url, callbackURLScheme: config.callbackScheme) { responseURL, error in
+            let webAuthSession = ASWebAuthenticationSession(url: Endpoint.authenticate(token.oauthToken).url, callbackURLScheme: config.callbackScheme) { responseURL, error in
                 guard error == nil else {
                     promise(.failure(.authenticating(error!)))
                     return
@@ -174,13 +138,10 @@ public class TwiAuth {
             return Fail(error: TwiError.accessToken)
                 .eraseToAnyPublisher()
         }
-        let headerBuilder = OAuthHeaderBuilder()
         let authHeader = headerBuilder.accessTokenVerifierHeader(
-            with: config.consumerKey,
             oauthToken: token.oauthToken,
-            oauthVerifier: token.oauthVerifier,
-            config.consumerSecret, and: config.callbackScheme)
-        var request = URLRequest(url: TwitterURL.accessToken.url, timeoutInterval: Double.infinity)
+            oauthVerifier: token.oauthVerifier)
+        var request = URLRequest(url: Endpoint.accessToken.url, timeoutInterval: Double.infinity)
         request.httpMethod = TwiHTTPMethod.post.rawValue
         request.setValue(authHeader, forHTTPHeaderField: "Authorization")
         
@@ -202,9 +163,8 @@ public class TwiAuth {
 
     @available(*, deprecated, renamed: "requestTokenPublisher")
     private func requestToken(completion: @escaping (Result<State, TwiError>) -> Void) {
-        let headerBuilder = OAuthHeaderBuilder()
-        let authHeader = headerBuilder.requestTokenHeader(with: config.consumerKey, config.consumerSecret, and: config.callbackScheme)
-        var request = URLRequest(url: TwitterURL.requestToken.url, timeoutInterval: Double.infinity)
+        let authHeader = headerBuilder.requestTokenHeader()
+        var request = URLRequest(url: Endpoint.requestToken.url, timeoutInterval: Double.infinity)
         request.httpMethod = TwiHTTPMethod.post.rawValue
         request.setValue(authHeader, forHTTPHeaderField: "Authorization")
         session.dataTask(with: request) { [weak self] data, response, error in
@@ -232,7 +192,7 @@ public class TwiAuth {
     @available(*, deprecated, renamed: "authenticatePublisher")
     private func authenticate(completion: @escaping (Result<State, TwiError>) -> Void) {
         guard case State.requestedToken(let token) = state else { return }
-        let asSession = ASWebAuthenticationSession(url: TwitterURL.authenticate(token.oauthToken).url, callbackURLScheme: config.callbackScheme) { responseURL, error in
+        let asSession = ASWebAuthenticationSession(url: Endpoint.authenticate(token.oauthToken).url, callbackURLScheme: config.callbackScheme) { responseURL, error in
             guard error == nil else {
                 completion(.failure(.authenticating(error!)))
                 return
@@ -259,13 +219,10 @@ public class TwiAuth {
         guard case .authenticate(let token) = state else {
             return
         }
-        let headerBuilder = OAuthHeaderBuilder()
         let authHeader = headerBuilder.accessTokenVerifierHeader(
-            with: config.consumerKey,
             oauthToken: token.oauthToken,
-            oauthVerifier: token.oauthVerifier,
-            config.consumerSecret, and: config.callbackScheme)
-        var request = URLRequest(url: TwitterURL.accessToken.url, timeoutInterval: Double.infinity)
+            oauthVerifier: token.oauthVerifier)
+        var request = URLRequest(url: Endpoint.accessToken.url, timeoutInterval: Double.infinity)
         request.httpMethod = TwiHTTPMethod.post.rawValue
         request.setValue(authHeader, forHTTPHeaderField: "Authorization")
         session.dataTask(with: request) { [weak self] data, response, error in
@@ -293,41 +250,37 @@ public class TwiAuth {
 
 }
 
-extension TwiAuth.RequestToken {
-    init(with attributes: [String: String]) {
-        oauthToken = attributes["oauth_token"] ?? ""
-        oauthSecret = attributes["oauth_token_secret"] ?? ""
+extension TwiAuth {
+    enum State {
+        case requestedToken(_ token: RequestToken)
+        case authenticate(_ token: AuthenticateToken)
+        case accessToken(_ token: AccessToken)
+        case idle
     }
-}
 
-extension TwiAuth.AuthenticateToken {
-    init(with parameters: [String: String]) {
-        oauthToken = parameters["oauth_token"] ?? ""
-        oauthVerifier = parameters["oauth_verifier"] ?? ""
+    struct RequestToken {
+        let oauthToken: String
+        let oauthSecret: String
+
+        init(with attributes: [String: String]) {
+            oauthToken = attributes["oauth_token"] ?? ""
+            oauthSecret = attributes["oauth_token_secret"] ?? ""
+        }
     }
-}
 
-extension AccessToken {
-    init(with attributes: [String: String]) {
-        oauthToken = attributes["oauth_token"] ?? ""
-        oauthSecret = attributes["oauth_token_secret"] ?? ""
-        userId = attributes["user_id"] ?? ""
-        screenName = attributes["screen_name"] ?? ""
-    }
-}
+    struct AuthenticateToken {
+        let oauthToken: String
+        let oauthVerifier: String
 
-public enum TwiError: Error {
-    case badAuthData(String)
-    case initialization(Error?), authenticating(Error?)
-    case accessToken
-
-    static func encodingError() -> NSError {
-        NSError(domain: "com.twiauth.error", code: 601, userInfo: ["reason": "Failed to encode the response received."])
+        init(with parameters: [String: String]) {
+            oauthToken = parameters["oauth_token"] ?? ""
+            oauthVerifier = parameters["oauth_verifier"] ?? ""
+        }
     }
 }
 
 public extension TwiAuth {
-    func accessTokenAuthHeader(url: String, method: String) -> String {
+    func accessTokenAuthHeader(url: URL, method: String) -> String {
         guard case let .accessToken(token) = state else {
             return ""
         }
@@ -336,7 +289,7 @@ public extension TwiAuth {
             return ""
         }
 
-        let authHeader = OAuthHeaderBuilder().accessTokenHeader(url: url, method: method, consumerKey: config.consumerKey, consumerSecret: config.consumerSecret, oauthToken: token.oauthToken, oauthSecret: token.oauthSecret)
+        let authHeader = headerBuilder.accessTokenHeader(url: url, method: method, token: token)
 
         return authHeader
     }
@@ -351,10 +304,20 @@ extension String {
 public extension URLRequest {
     mutating func authorize(with twiAuth: TwiAuth) {
         guard
-            let urlString = url?.absoluteString,
+            let url = url,
             let httpMethod = httpMethod else {
             return
         }
-        addValue(twiAuth.accessTokenAuthHeader(url: urlString, method: httpMethod), forHTTPHeaderField: "Authorization")
+        addValue(twiAuth.accessTokenAuthHeader(url: url, method: httpMethod), forHTTPHeaderField: "Authorization")
+    }
+}
+
+public enum TwiError: Error {
+    case badAuthData(String)
+    case initialization(Error?), authenticating(Error?)
+    case accessToken
+
+    static func encodingError() -> NSError {
+        NSError(domain: "com.twiauth.error", code: 601, userInfo: ["reason": "Failed to encode the response received."])
     }
 }
