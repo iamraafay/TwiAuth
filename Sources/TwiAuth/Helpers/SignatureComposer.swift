@@ -10,7 +10,7 @@ import CommonCrypto
 
 enum SignatureComposer {
     static func compose(
-        httpMethod: TwiHTTPMethod = .post,
+        httpMethod: String,
         url: String,
         params: [String: Any],
         consumerSecret: String,
@@ -20,7 +20,9 @@ enum SignatureComposer {
         let signingKey = signatureKey(consumerSecret, oAuthTokenSecret)
         let signatureBase = signatureBaseString(httpMethod, url, params)
 
-        return HMAC_SHA1(signingKey: signingKey, signatureBase: signatureBase)
+        let signature = HMAC_SHA1(signingKey: signingKey, signatureBase: signatureBase)
+        debugPrint("signature: \(signature)")
+        return signature
     }
 
     private static func signatureKey(_ consumerSecret: String, _ oAuthTokenSecret: String?) -> String {
@@ -42,9 +44,9 @@ enum SignatureComposer {
         return result.sorted().joined(separator: "&")
     }
 
-    private static func signatureBaseString(_ httpMethod: TwiHTTPMethod, _ url: String, _ params: [String: Any]) -> String {
+    private static func signatureBaseString(_ httpMethod: String, _ url: String, _ params: [String: Any]) -> String {
         let parameterString = signatureParameterString(params: params)
-        return httpMethod.rawValue + "&" + url.urlEncoded + "&" + parameterString.urlEncoded
+        return httpMethod + "&" + url.urlEncoded + "&" + parameterString.urlEncoded
     }
 
     private static func HMAC_SHA1(signingKey: String, signatureBase: String) -> String {
