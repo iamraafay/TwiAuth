@@ -1,13 +1,19 @@
 //
-//  OAuthHeaderBuilder.swift
+//  TwiAuth+OAuthBuilding.swift
 //  TwiAuth
 //
-//  Copyright (c) 2020 Mohammad Abdurraafay
+//  Created by Mohammad Abdurraafay on 2021-01-31.
+//
 
 import Foundation
 
-struct OAuthHeaderBuilder {
-    let config: CredentialsConfig
+// MARK: OAuthToken building
+
+public extension TwiAuth {
+
+}
+
+extension TwiAuth {
     func requestTokenHeader() -> String {
         var header = RequestTokenHeader(oauthCallback: config.callbackScheme, oauthConsumerKey: config.consumerKey)
         header.sign(for: Endpoint.requestToken.url, consumerSecret: config.consumerSecret)
@@ -22,10 +28,13 @@ struct OAuthHeaderBuilder {
         return header.authorized
     }
 
-    func accessTokenHeader(url: URL, method: TwiHTTPMethod, token: AccessToken) -> String {
+    func accessTokenHeader(method: TwiHTTPMethod, url: URL, token: AccessToken, parameters: [String: String] = [:]) -> String {
         var header = AccessTokenHeader(oauthConsumerKey: config.consumerKey, oauthToken: token.oauthToken)
-        header.sign(for: url, method: method, consumerSecret: config.consumerSecret, oAuthTokenSecret: token.oauthSecret)
+        header.sign(for: url, method: method, consumerSecret: config.consumerSecret, oAuthTokenSecret: token.oauthSecret, parameters: parameters)
 
-        return header.authorized
+        let OAuthFinal = header.authorized
+        debugPrint("OAuthFinal: \(OAuthFinal)")
+
+        return OAuthFinal
     }
 }

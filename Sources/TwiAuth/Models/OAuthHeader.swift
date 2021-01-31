@@ -16,7 +16,7 @@ protocol OAuthHeader: DictionaryRepresentable {
 
     var authorized: String { get }
 
-    mutating func sign(for url: URL, method: TwiHTTPMethod, consumerSecret: String, oAuthTokenSecret: String?)
+    mutating func sign(for url: URL, method: TwiHTTPMethod, consumerSecret: String, oAuthTokenSecret: String?, parameters: [String: String])
 }
 
 struct RequestTokenHeader: OAuthHeader {
@@ -76,7 +76,8 @@ extension OAuthHeader {
         return "OAuth " + parts.sorted().joined(separator: ", ")
     }
 
-    mutating func sign(for url: URL, method: TwiHTTPMethod = .post, consumerSecret: String, oAuthTokenSecret: String? = nil) {
-        oauthSignature = SignatureComposer.compose(httpMethod: method, url: url.absoluteString, params: dictionary, consumerSecret: consumerSecret, oAuthTokenSecret: oAuthTokenSecret)
+    mutating func sign(for url: URL, method: TwiHTTPMethod = .post, consumerSecret: String, oAuthTokenSecret: String? = nil, parameters: [String: String] = [:]) {
+        let fullDictionary = dictionary.merging(parameters, uniquingKeysWith: { _, new in new })
+        oauthSignature = SignatureComposer.compose(httpMethod: method.rawValue, url: url.absoluteString, params: fullDictionary, consumerSecret: consumerSecret, oAuthTokenSecret: oAuthTokenSecret)
     }
 }
