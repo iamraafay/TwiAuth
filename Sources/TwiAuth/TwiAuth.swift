@@ -100,17 +100,6 @@ extension String {
     }
 }
 
-public extension URLRequest {
-    mutating func authorize(with twiAuth: TwiAuth, with parameters: [String: String] = [:]) {
-        guard
-            let url = url,
-            let httpMethod = httpMethod else {
-            return
-        }
-        addValue(twiAuth.accessTokenAuthHeader(method: httpMethod, url: url), forHTTPHeaderField: "Authorization")
-    }
-}
-
 public enum TwiError: Error {
     case badAuthData(String)
     case initialization(Error?), authenticating(Error?)

@@ -78,15 +78,7 @@ extension ViewController: TwiAuthTokenProviding {
 ```
 
 ### Authorizing your Requests
-If you plan to let the TwitAuth know about previously generated token via providing protocol, then you could simply sign you `URLRequests` as follows.  
-  
-```
-	let request = URLRequest(..)
-	request.authorize(with: twiAuth)
-	...
-```
-
-or else, you could always request TwitAuth to provide the authorization header String so your client can directly sign the  request themselves.  
+TwitAuth to provide the authorization header String so your client can directly sign the  request themselves.  
   
 ```
 let oauthHeader = twiAuth.accessTokenAuthHeader(url: url, method: method)
