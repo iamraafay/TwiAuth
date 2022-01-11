@@ -15,7 +15,7 @@ public extension TwiAuth {
 
 extension TwiAuth {
     func requestTokenHeader() -> String {
-        var header = RequestTokenHeader(oauthCallback: config.callbackScheme, oauthConsumerKey: config.consumerKey)
+        var header = RequestTokenHeader(oauthCallback: config.callbackScheme + "://", oauthConsumerKey: config.consumerKey)
         header.sign(for: Endpoint.requestToken.url, consumerSecret: config.consumerSecret)
 
         return header.authorized

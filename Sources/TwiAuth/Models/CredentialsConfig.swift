@@ -15,6 +15,6 @@ public struct CredentialsConfig {
     public init(consumerKey: String, consumerSecret: String, callbackScheme: String) {
         self.consumerKey = consumerKey
         self.consumerSecret = consumerSecret
-        self.callbackScheme = callbackScheme + "://twiAuth"
+        self.callbackScheme = callbackScheme
     }
 }
